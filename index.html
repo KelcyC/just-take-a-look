@@ -372,13 +372,14 @@
     // 呼叫 Gemini Vision API 結構化辨識
     async function callGeminiVisionAPI(base64Data) {
       const pureBase64 = base64Data.split(',')[1];
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      // 調整為支援度最穩定且完全支援 AQ. 開頭金鑰的 gemini-1.5-flash 端點
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
       
       const payload = {
         contents: [{
           parts: [
             {
-              text: `你是一個專業社群商品萃取助手。請分析這張 Instagram/Threads 截圖中的產品與文字資訊，嚴格以 JSON 格式回應，不得輸出 Markdown 標記，格式如下：
+              text: `你是一個專業社群商品萃取助手。請分析這張 Instagram/Threads 截圖中的產品與文字資訊，嚴格以 JSON 格式回應，不得輸出額外說明或 Markdown 標記，格式如下：
 {
   "originalName": "外包裝原文品名或英文品牌型號",
   "chineseName": "繁體中文品名",
@@ -402,7 +403,19 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
+
       const data = await res.json();
+
+      // 若 API 回傳失敗，直接彈出詳細錯誤資訊
+      if (!res.ok || data.error) {
+        const errorMsg = data.error ? data.error.message : `HTTP 狀態碼 ${res.status}`;
+        throw new Error(`Google API 回傳錯誤: ${errorMsg}`);
+      }
+
+      if (!data.candidates || data.candidates.length === 0) {
+        throw new Error('AI 未能產生有效結果，請更換清晰截圖再試一次。');
+      }
+
       const rawText = data.candidates[0].content.parts[0].text;
       const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
       return JSON.parse(cleanJson);
