@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>參考看看 - 截圖商品靈感清單</title>
+  
+  <!-- PWA 與 iOS 專用 Meta -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="參考看看">
+  <meta name="theme-color" content="#f2f2f7">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <style>
+    /* iOS 觸控優化與滾動彈性 */
+    body {
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+      background-color: #f2f2f7;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    input, select, textarea {
+      -webkit-user-select: auto;
+      user-select: auto;
+    }
+    .card-dragging {
+      opacity: 0.4;
+      transform: scale(0.98);
+    }
+  </style>
+</head>
+<body class="text-slate-800 antialiased pb-24">
+
+  <!-- 頂部導航列 -->
+  <header class="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200 px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center space-x-2">
+      <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold shadow-sm">
+        <i class="fa-solid fa-bag-shopping text-sm"></i>
+      </div>
+      <h1 class="text-lg font-bold tracking-tight">參考看看</h1>
+    </div>
+    <div class="flex items-center space-x-2">
+      <button onclick="toggleCompletedFilter()" id="btn-toggle-filter" class="px-2.5 py-1 text-xs font-medium rounded-full border border-slate-300 text-slate-600 bg-white">
+        顯示已買: 關
+      </button>
+      <button onclick="openSettingsModal()" class="w-8 h-8 rounded-full flex items-center justify-center text-slate-600 hover:bg-slate-100">
+        <i class="fa-solid fa-gear"></i>
+      </button>
+    </div>
+  </header>
+
+  <main class="max-w-md mx-auto px-4 pt-4 space-y-4">
+
+    <!-- 截圖上傳與解析區塊 -->
+    <section class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80">
+      <h2 class="text-sm font-semibold text-slate-700 mb-2 flex items-center">
+        <i class="fa-solid fa-wand-magic-sparkles text-indigo-600 mr-2"></i> 上傳社群截圖辨識
+      </h2>
+      <p class="text-xs text-slate-500 mb-3">支援從 IG / Threads 截圖，AI 自動擷取品名、規格、預估價格與通路。</p>
+
+      <input type="file" id="image-input" accept="image/*" class="hidden" onchange="handleImageUpload(event)">
+      
+      <div class="flex gap-2">
+        <button onclick="document.getElementById('image-input').click()" class="flex-1 py-3 px-4 bg-indigo-600 active:bg-indigo-700 text-white font-medium rounded-xl text-sm flex items-center justify-center space-x-2 shadow-sm transition">
+          <i class="fa-solid fa-camera"></i>
+          <span>選擇截圖辨識</span>
+        </button>
+        <button onclick="addMockItem()" class="px-3 py-3 bg-slate-100 text-slate-600 rounded-xl text-xs font-medium">
+          範例體驗
+        </button>
+      </div>
+
+      <!-- 解析進度提示 -->
+      <div id="loading-spinner" class="hidden mt-3 p-3 bg-indigo-50 rounded-xl flex items-center space-x-3 text-indigo-700">
+        <i class="fa-solid fa-circle-notch fa-spin text-lg"></i>
+        <span class="text-xs font-medium">正在進行多模態 Vision 辨識中，請稍候...</span>
+      </div>
+    </section>
+
+    <!-- AI 現場地點採購助理對話框 -->
+    <section class="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl p-4 text-white shadow-sm">
+      <div class="flex items-center space-x-2 mb-2">
+        <i class="fa-solid fa-location-dot"></i>
+        <h2 class="text-sm font-semibold">AI 現場地點採購助理</h2>
+      </div>
+      <p class="text-xs text-indigo-100 mb-3">輸入您現在所在的門市或商圈，比對未購買商品：</p>
+      <div class="flex gap-2">
+        <input type="text" id="store-query" placeholder="例如：松本清、唐吉訶德、屈臣氏" class="flex-1 px-3 py-2 rounded-xl text-slate-800 text-xs bg-white focus:outline-none">
+        <button onclick="queryLocationGoods()" class="px-4 py-2 bg-slate-900/40 hover:bg-slate-900/60 active:scale-95 text-white rounded-xl text-xs font-medium transition">
+          篩選
+        </button>
+      </div>
+      <div id="ai-query-result" class="hidden mt-3 p-2.5 bg-white/10 backdrop-blur-sm rounded-xl text-xs leading-relaxed border border-white/20"></div>
+    </section>
+
+    <!-- 商品列表區塊 -->
+    <section class="space-y-3">
+      <div class="flex items-center justify-between px-1">
+        <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider">待買商品清單 (長按可拖曳排序)</h3>
+        <span id="item-count" class="text-xs text-slate-400">0 項</span>
+      </div>
+
+      <div id="goods-list" class="space-y-3">
+        <!-- 動態渲染商品卡片 -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- 設定彈窗 (API Key) -->
+  <div id="settings-modal" class="hidden fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="font-bold text-slate-800 text-base">設定 Gemini API 金鑰</h3>
+        <button onclick="closeSettingsModal()" class="text-slate-400 hover:text-slate-600">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+      <p class="text-xs text-slate-500 leading-relaxed">
+        填入個人的 Google Gemini API Key 以啟用 Vision 視覺截圖辨識。金鑰僅儲存於您手機的本機快取中。若無填寫將以模擬資料執行。
+      </p>
+      <input type="password" id="api-key-input" placeholder="AIzaSy..." class="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:border-indigo-600">
+      <div class="flex gap-2 pt-2">
+        <button onclick="saveApiKey()" class="flex-1 py-2 bg-indigo-600 text-white rounded-xl text-xs font-medium">儲存</button>
+        <button onclick="closeSettingsModal()" class="flex-1 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-medium">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 預設分類標籤
+    const CATEGORIES = ["保養品", "化妝品", "日用品", "保健食品", "食品零食", "生活雜貨", "未分類"];
+    
+    // 本機狀態管理
+    let items = JSON.parse(localStorage.getItem('see_buy_items') || '[]');
+    let showCompleted = false;
+    let apiKey = localStorage.getItem('gemini_api_key') || '';
+    let draggedIndex = null;
+
+    // 初始化渲染
+    window.addEventListener('DOMContentLoaded', () => {
+      renderList();
+    });
+
+    // 儲存資料至 localStorage
+    function saveItems() {
+      localStorage.setItem('see_buy_items', JSON.stringify(items));
+      renderList();
+    }
+
+    // 切換已購買項目顯示開關
+    function toggleCompletedFilter() {
+      showCompleted = !showCompleted;
+      const btn = document.getElementById('btn-toggle-filter');
+      btn.innerText = `顯示已買: ${showCompleted ? '開' : '關'}`;
+      btn.className = showCompleted 
+        ? "px-2.5 py-1 text-xs font-medium rounded-full border border-indigo-600 text-white bg-indigo-600"
+        : "px-2.5 py-1 text-xs font-medium rounded-full border border-slate-300 text-slate-600 bg-white";
+      renderList();
+    }
+
+    // 渲染商品卡片列表
+    function renderList() {
+      const container = document.getElementById('goods-list');
+      container.innerHTML = '';
+
+      const filtered = items.filter(item => showCompleted ? true : !item.completed);
+      document.getElementById('item-count').innerText = `${filtered.length} 項`;
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-12 text-slate-400">
+            <i class="fa-regular fa-images text-4xl mb-2"></i>
+            <p class="text-xs">目前沒有商品項目，快上傳截圖建立清單吧！</p>
+          </div>
+        `;
+        return;
+      }
+
+      filtered.forEach((item, index) => {
+        const card = document.createElement('div');
+        card.draggable = true;
+        card.dataset.id = item.id;
+        card.className = `bg-white rounded-2xl p-3.5 shadow-sm border border-slate-200/80 transition flex space-x-3 items-start relative ${item.completed ? 'opacity-60 bg-slate-50' : ''}`;
+
+        // 拖拉排序事件綁定
+        card.addEventListener('dragstart', (e) => handleDragStart(e, item.id));
+        card.addEventListener('dragover', handleDragOver);
+        card.addEventListener('drop', (e) => handleDrop(e, item.id));
+        card.addEventListener('dragend', handleDragEnd);
+
+        // 分類選單 options
+        const categoryOptions = CATEGORIES.map(cat => 
+          `<option value="${cat}" ${item.category === cat ? 'selected' : ''}>${cat}</option>`
+        ).join('');
+
+        card.innerHTML = `
+          <!-- 勾選狀態 -->
+          <div class="pt-1">
+            <button onclick="toggleComplete('${item.id}')" class="w-6 h-6 rounded-full border-2 flex items-center justify-center transition ${item.completed ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-300 text-transparent'}">
+              <i class="fa-solid fa-check text-xs"></i>
+            </button>
+          </div>
+
+          <!-- 截圖預覽 -->
+          <div class="w-20 h-20 rounded-xl overflow-hidden bg-slate-100 flex-shrink-0 border border-slate-100">
+            <img src="${item.imageUrl}" alt="${item.chineseName}" class="w-full h-full object-cover">
+          </div>
+
+          <!-- 商品資訊與下拉控制 -->
+          <div class="flex-1 min-w-0 pr-6 space-y-1">
+            <div class="flex items-center space-x-1.5">
+              <select onchange="updateCategory('${item.id}', this.value)" class="text-[11px] font-medium bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md border-none focus:ring-1 focus:ring-indigo-500">
+                ${categoryOptions}
+              </select>
+              <span class="text-[11px] text-slate-400 truncate"><i class="fa-solid fa-store mr-1"></i>${item.store || '未指定'}</span>
+            </div>
+
+            <h4 class="text-sm font-bold text-slate-800 leading-snug truncate ${item.completed ? 'line-through text-slate-500' : ''}">
+              ${item.chineseName}
+            </h4>
+            <p class="text-xs text-slate-400 truncate">${item.originalName || '-'}</p>
+
+            <div class="text-xs font-semibold text-indigo-600 pt-0.5">
+              ${item.price || '參考價格未標註'}
+            </div>
+          </div>
+
+          <!-- 刪除按鈕 -->
+          <button onclick="deleteItem('${item.id}')" class="absolute top-3.5 right-3 text-slate-300 hover:text-rose-500 p-1 transition">
+            <i class="fa-solid fa-trash-can text-sm"></i>
+          </button>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    // 勾選完成切換
+    function toggleComplete(id) {
+      const target = items.find(i => i.id === id);
+      if (target) {
+        target.completed = !target.completed;
+        saveItems();
+      }
+    }
+
+    // 更新分類標籤
+    function updateCategory(id, newCat) {
+      const target = items.find(i => i.id === id);
+      if (target) {
+        target.category = newCat;
+        saveItems();
+      }
+    }
+
+    // 刪除項目
+    function deleteItem(id) {
+      if (confirm('確定要移除此項商品嗎？')) {
+        items = items.filter(i => i.id !== id);
+        saveItems();
+      }
+    }
+
+    // 拖拉重排核心
+    function handleDragStart(e, id) {
+      draggedIndex = items.findIndex(i => i.id === id);
+      e.target.classList.add('card-dragging');
+    }
+    function handleDragOver(e) {
+      e.preventDefault();
+    }
+    function handleDrop(e, targetId) {
+      e.preventDefault();
+      const targetIndex = items.findIndex(i => i.id === targetId);
+      if (draggedIndex !== null && targetIndex !== -1 && draggedIndex !== targetIndex) {
+        const [moved] = items.splice(draggedIndex, 1);
+        items.splice(targetIndex, 0, moved);
+        saveItems();
+      }
+    }
+    function handleDragEnd(e) {
+      e.target.classList.remove('card-dragging');
+      draggedIndex = null;
+    }
+
+    // 處理圖片上傳與壓縮
+    async function handleImageUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      document.getElementById('loading-spinner').classList.remove('hidden');
+
+      try {
+        const compressedBase64 = await resizeImage(file, 1024);
+        let extracted = null;
+
+        if (apiKey) {
+          extracted = await callGeminiVisionAPI(compressedBase64);
+        } else {
+          // 模擬解析
+          await new Promise(r => setTimeout(r, 1200));
+          extracted = {
+            originalName: "Mediheal N.M.F Toner Pad",
+            chineseName: "美迪惠爾 保濕調理棉片",
+            category: "保養品",
+            price: "約 NT$ 480",
+            store: "松本清 / 屈臣氏"
+          };
+        }
+
+        const newItem = {
+          id: 'item_' + Date.now(),
+          imageUrl: compressedBase64,
+          originalName: extracted.originalName || "未知原文品名",
+          chineseName: extracted.chineseName || "社群截圖推薦好物",
+          category: extracted.category || "未分類",
+          price: extracted.price || "未標註價格",
+          store: extracted.store || "未知商店",
+          completed: false,
+          createdAt: Date.now()
+        };
+
+        items.unshift(newItem);
+        saveItems();
+      } catch (err) {
+        alert('解析發生異常: ' + err.message);
+      } finally {
+        document.getElementById('loading-spinner').classList.add('hidden');
+        e.target.value = '';
+      }
+    }
+
+    // 圖片壓縮為 Base64
+    function resizeImage(file, maxDimension) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (readerEvent) => {
+          const img = new Image();
+          img.onload = () => {
+            let width = img.width;
+            let height = img.height;
+            if (width > height) {
+              if (width > maxDimension) {
+                height *= maxDimension / width;
+                width = maxDimension;
+              }
+            } else {
+              if (height > maxDimension) {
+                width *= maxDimension / height;
+                height = maxDimension;
+              }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', 0.85));
+          };
+          img.src = readerEvent.target.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    // 呼叫 Gemini Vision API 結構化辨識
+    async function callGeminiVisionAPI(base64Data) {
+      const pureBase64 = base64Data.split(',')[1];
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      
+      const payload = {
+        contents: [{
+          parts: [
+            {
+              text: `你是一個專業社群商品萃取助手。請分析這張 Instagram/Threads 截圖中的產品與文字資訊，嚴格以 JSON 格式回應，不得輸出 Markdown 標記，格式如下：
+{
+  "originalName": "外包裝原文品名或英文品牌型號",
+  "chineseName": "繁體中文品名",
+  "category": "保養品/化妝品/日用品/保健食品/食品零食/生活雜貨/未分類",
+  "price": "提及之參考價格與幣別",
+  "store": "提及之推薦購買商店或通路"
+}`
+            },
+            {
+              inlineData: {
+                mimeType: "image/jpeg",
+                data: pureBase64
+              }
+            }
+          ]
+        }]
+      };
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      const rawText = data.candidates[0].content.parts[0].text;
+      const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+      return JSON.parse(cleanJson);
+    }
+
+    // 範例體驗資料
+    function addMockItem() {
+      const mock = {
+        id: 'item_' + Date.now(),
+        imageUrl: "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=300",
+        originalName: "Rohto Melano CC Intensive Anti-Spot Essence",
+        chineseName: "樂敦 Melano CC 高純度維他命C美白精華",
+        category: "保養品",
+        price: "約 JPY 1,200",
+        store: "松本清 / 唐吉訶德",
+        completed: false,
+        createdAt: Date.now()
+      };
+      items.unshift(mock);
+      saveItems();
+    }
+
+    // AI 現場地點採購助理過濾
+    function queryLocationGoods() {
+      const query = document.getElementById('store-query').value.trim();
+      const resultBox = document.getElementById('ai-query-result');
+      if (!query) {
+        resultBox.classList.add('hidden');
+        return;
+      }
+
+      const pending = items.filter(i => !i.completed);
+      if (pending.length === 0) {
+        resultBox.innerHTML = `目前沒有尚未購買的商品清單！`;
+        resultBox.classList.remove('hidden');
+        return;
+      }
+
+      // 比對通路或相關性推薦
+      const matched = pending.filter(i => 
+        (i.store && i.store.toLowerCase().includes(query.toLowerCase())) ||
+        (i.category && query.includes(i.category))
+      );
+
+      resultBox.classList.remove('hidden');
+      if (matched.length > 0) {
+        resultBox.innerHTML = `
+          <strong>在「${query}」可能可購得 ${matched.length} 項商品：</strong>
+          <ul class="list-disc list-inside mt-1 space-y-0.5">
+            ${matched.map(m => `<li>${m.chineseName} (${m.category}) - ${m.price}</li>`).join('')}
+          </ul>
+        `;
+      } else {
+        resultBox.innerHTML = `在「${query}」未找到明確指定該通路的商品，但您可檢查以下 ${pending.length} 項未購買好物：${pending.slice(0, 3).map(p => p.chineseName).join('、')}等。`;
+      }
+    }
+
+    // Modal 與 API Key 管理
+    function openSettingsModal() {
+      document.getElementById('api-key-input').value = apiKey;
+      document.getElementById('settings-modal').classList.remove('hidden');
+    }
+    function closeSettingsModal() {
+      document.getElementById('settings-modal').classList.add('hidden');
+    }
+    function saveApiKey() {
+      apiKey = document.getElementById('api-key-input').value.trim();
+      localStorage.setItem('gemini_api_key', apiKey);
+      closeSettingsModal();
+      alert('API 金鑰已安全儲存於手機本機！');
+    }
+  </script>
+</body>
+</html>
