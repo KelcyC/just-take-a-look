@@ -369,12 +369,17 @@
       });
     }
 
-    // 呼叫 Gemini Vision API 結構化辨識
+    // 呼叫 Gemini Vision API（自動相容 v1 與各版本 Flash 模型）
     async function callGeminiVisionAPI(base64Data) {
       const pureBase64 = base64Data.split(',')[1];
-      // 調整為支援度最穩定且完全支援 AQ. 開頭金鑰的 gemini-1.5-flash 端點
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
       
+      // 依序嘗試目前支援度最高的多模態端點
+      const endpoints = [
+        `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`
+      ];
+
       const payload = {
         contents: [{
           parts: [
@@ -398,27 +403,31 @@
         }]
       };
 
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+      let lastError = null;
 
-      const data = await res.json();
+      for (const endpoint of endpoints) {
+        try {
+          const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
 
-      // 若 API 回傳失敗，直接彈出詳細錯誤資訊
-      if (!res.ok || data.error) {
-        const errorMsg = data.error ? data.error.message : `HTTP 狀態碼 ${res.status}`;
-        throw new Error(`Google API 回傳錯誤: ${errorMsg}`);
+          const data = await res.json();
+
+          if (res.ok && data.candidates && data.candidates.length > 0) {
+            const rawText = data.candidates[0].content.parts[0].text;
+            const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+            return JSON.parse(cleanJson);
+          } else if (data.error) {
+            lastError = data.error.message;
+          }
+        } catch (e) {
+          lastError = e.message;
+        }
       }
 
-      if (!data.candidates || data.candidates.length === 0) {
-        throw new Error('AI 未能產生有效結果，請更換清晰截圖再試一次。');
-      }
-
-      const rawText = data.candidates[0].content.parts[0].text;
-      const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-      return JSON.parse(cleanJson);
+      throw new Error(`Google API 回傳錯誤: ${lastError || '未能解析回應，請檢查 API Key 或網路狀態'}`);
     }
 
     // 範例體驗資料
